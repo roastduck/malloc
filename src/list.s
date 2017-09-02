@@ -6,10 +6,10 @@
     # Each block of the i-th list has 2 ^ (i + 4) bytes (16B * 2^i)
     # Each item of this array is a header sentinel (8 bytes)
     # Largest i = 31 (2GB)
-    .lcomm available, (32 - 4) * ND_SENTINEL_SZ
+    .comm available, (32 - 4) * ND_SENTINEL_SZ
 
     # And we should have trailer sentinels
-    .lcomm trailer, (32 - 4) * ND_SENTINEL_SZ
+    .comm trailer, (32 - 4) * ND_SENTINEL_SZ
 
 .section .text
 .globl pick_node

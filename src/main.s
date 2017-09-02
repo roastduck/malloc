@@ -6,9 +6,10 @@
 .section .data
 base:
     .long 0
-brk:
+# DO NOT name it to `brk`
+heaptop:
     .long 0
-root_level
+root_level:
     .long 0
 
 .section .text
@@ -27,7 +28,7 @@ init_list_loop:
     movl %ebx, ND_NEXT(%eax)
     movl %eax, ND_PREV(%ebx)
     movl $0, ND_NEXT(%ebx)
-    cmpl $32, %ecx
+    cmpl $31 - 4, %ecx
     je end_init_list_loop
     addl $ND_SENTINEL_SZ, %eax
     addl $ND_SENTINEL_SZ, %ebx
@@ -39,13 +40,23 @@ end_init_list_loop:
     movl $SYS_BRK, %eax
     xorl %ebx, %ebx
     int $LINUX_SYSCALL
+    # Brk align with 4K internally, but that value doesn't return
+    addl $0xfff, %eax
+    andl $-0x1000, %eax
     movl %eax, base
 
     # Insert unit block to start with
     movl $SYS_BRK, %eax
-    movl $ND_HEADER_SZ, %ebx
+    movl $ND_MIN_SIZE, %ebx
+    addl base, %ebx
+    addl $0xfff, %ebx
+    andl $-0x1000, %ebx
     int $LINUX_SYSCALL
-    movl %eax, brk
+    movl %eax, heaptop
+    pushl $0
+    pushl base
+    call prepend_list
+    addl $8, %esp
 
     popl %ebx
     leave
@@ -61,23 +72,27 @@ move_root:
 
     # Move brk to be 2 * required
     movl MVR_ARG_LEVEL(%ebp), %ecx
-    movl $8, %ebx
+    movl $ND_MIN_SIZE * 2, %ebx
     shll %cl, %ebx
-    cmpl %ebx, brk
+    addl base, %ebx
+    cmpl %ebx, heaptop
     jge mvr_already_enough
     movl $SYS_BRK, %eax
+    addl $0xfff, %ebx
+    andl $-0x1000, %ebx
     int $LINUX_SYSCALL
-    movl %eax, brk
+    movl %eax, heaptop
 mvr_already_enough:
 
     # Create new blocks
     movl root_level, %ecx
-    movl $4, %ebx
+    movl $ND_MIN_SIZE, %ebx
     shll %cl, %ebx
 mvr_newblk_loop:
     testl $-1, base
     jz mvr_not_merge
-    cmpl %ecx, ND_LEVEL(base)
+    movl base, %edx
+    cmpl %ecx, ND_LEVEL(%edx)
     jne mvr_not_merge
     # Merge
     # Pick from original list
@@ -110,7 +125,7 @@ mvr_not_merge:
 mvr_create_next_loop:
     cmpl %ecx, MVR_ARG_LEVEL(%ebp)
     # %ecx <= arg, not <
-    jne mvr_init_loop
+    jne mvr_newblk_loop
 
     popl %ebx
     leave
@@ -148,7 +163,7 @@ prep_main_loop:
     cmpl %ecx, %ebx
     je end_prep_main_loop
     decl %ecx
-    movl $16, %edx
+    movl $ND_MIN_SIZE, %edx
     shll %cl, %edx
     addl %eax, %edx
     movl %ecx, ND_LEVEL(%edx)
@@ -171,8 +186,7 @@ end_prep_main_loop:
 
 .globl allocate
 .type allocate, @function
-.equ ALC_ARG_ADDR, 8
-.equ ALC_ARG_SIZE, 12
+.equ ALC_ARG_SIZE, 8
 allocate:
     pushl %ebp
     movl %esp, %ebp
@@ -184,11 +198,11 @@ allocate:
     call init
 initialized:
 
-    # level = bsr(size - 1) + 1 - 4
+    # level = bsr(size - 1) + 1 - ND_LEVEL_OFFSET
     movl ALC_ARG_SIZE(%ebp), %ebx
     addl $ND_HEADER_SZ - 1, %ebx
     bsrl %ebx, %ebx
-    subl 3, %ebx
+    subl $ND_LEVEL_OFFSET - 1, %ebx
     pushl %ebx
     call prepare_blk
     addl $4, %esp
@@ -212,9 +226,9 @@ deallocate:
     movl $0, ND_PREV(%ebx)
 
 dealloc_loop:
-    # %eax = buddy = ((addr - base) ^ (4 << level)) + base
+    # %eax = buddy = ((addr - base) ^ (16 << level)) + base
     movl ND_LEVEL(%ebx), %ecx
-    movl $4, %eax
+    movl $ND_MIN_SIZE, %eax
     shll %cl, %eax
     movl %ebx, %edx
     subl base, %edx

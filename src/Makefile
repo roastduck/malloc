@@ -1,6 +1,6 @@
 ASM = main.s list.s
 OBJ = $(ASM:%.s=../build/%.o)
-LIB = ../lib/malloc.so
+LIB = ../lib/liballoc.so
 
 ../build/%.o : %.s
 	as --32 $^ -o $@

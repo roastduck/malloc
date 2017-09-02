@@ -9,4 +9,6 @@
 # Metadata:
 .equ ND_SENTINEL_SZ, 8
 .equ ND_HEADER_SZ, 12
+.equ ND_MIN_SIZE, 16
+.equ ND_LEVEL_OFFSET, 4
 
