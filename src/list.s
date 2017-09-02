@@ -83,10 +83,18 @@ pop_list_ret:
 .equ PPD_ARG_NODE, 8
 .equ PPD_ARG_LEVEL, 12
 prepend_list:
-    movl PPD_ARG_LEVEL - 4(%esp), %eax
-    movl PPD_ARG_NODE - 4(%esp), %ecx
+    pushl %ebp
+    movl %esp, %ebp
+
+    movl PPD_ARG_LEVEL(%esp), %eax
+    movl PPD_ARG_NODE(%esp), %ecx
     movl %eax, ND_LEVEL(%ecx)
     leal available(, %eax, ND_SENTINEL_SZ), %eax
-    movl %eax, PPD_ARG_LEVEL - 4(%esp)
-    jmp insert_node
+    pushl %eax
+    pushl %ecx
+    call insert_node
+    addl $8, %esp
+
+    leave
+    ret
 

@@ -1,9 +1,4 @@
-#include <assert.h>
-#include <stdio.h>
-#include <unistd.h>
-#include "alloc.h"
-
-#define HEADER_SZ 12
+#include "fixture.h"
 
 int main()
 {

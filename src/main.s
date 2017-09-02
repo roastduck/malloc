@@ -71,6 +71,7 @@ move_root:
     pushl %ebx
 
     # Move brk to be 2 * required
+    # DO NOT +1 directly on the parameter
     movl MVR_ARG_LEVEL(%ebp), %ecx
     movl $ND_MIN_SIZE * 2, %ebx
     shll %cl, %ebx
@@ -89,10 +90,10 @@ mvr_already_enough:
     movl $ND_MIN_SIZE, %ebx
     shll %cl, %ebx
 mvr_newblk_loop:
-    testl $-1, base
+    movl base, %eax
+    testl $-1, ND_NEXT(%eax)
     jz mvr_not_merge
-    movl base, %edx
-    cmpl %ecx, ND_LEVEL(%edx)
+    cmpl %ecx, ND_LEVEL(%eax)
     jne mvr_not_merge
     # Merge
     # Pick from original list
@@ -109,6 +110,7 @@ mvr_newblk_loop:
     call prepend_list
     add $4, %esp
     popl %ecx
+    jmp mvr_create_next_loop
 mvr_not_merge:
     # Not merge
     # Add to new list
@@ -123,9 +125,11 @@ mvr_not_merge:
     incl %ecx
     shll $1, %ebx
 mvr_create_next_loop:
-    cmpl %ecx, MVR_ARG_LEVEL(%ebp)
-    # %ecx <= arg, not <
+    movl %ecx, %eax
+    decl %eax
+    cmpl %eax, MVR_ARG_LEVEL(%ebp)
     jne mvr_newblk_loop
+    movl %ecx, root_level
 
     popl %ebx
     leave
@@ -166,7 +170,7 @@ prep_main_loop:
     movl $ND_MIN_SIZE, %edx
     shll %cl, %edx
     addl %eax, %edx
-    movl %ecx, ND_LEVEL(%edx)
+    # ND_LEVEL set in prepend_list, so not setting here
     pushl %eax
     # Param #2
     pushl %ecx
@@ -178,6 +182,7 @@ prep_main_loop:
     popl %eax
     jmp prep_main_loop
 end_prep_main_loop:
+    # ND_LEVEL not set in prepend_list
     movl %ebx, ND_LEVEL(%eax)
 
     popl %ebx
