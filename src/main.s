@@ -4,7 +4,11 @@
 .include "list_spec.s"
 
 .section .data
+base:
+    .long 0
 brk:
+    .long 0
+root_level
     .long 0
 
 .section .text
@@ -35,19 +39,78 @@ end_init_list_loop:
     movl $SYS_BRK, %eax
     xorl %ebx, %ebx
     int $LINUX_SYSCALL
-    movl %eax, %edx
+    movl %eax, base
 
-    # Get a least 8 bytes for a header
+    # Insert unit block to start with
     movl $SYS_BRK, %eax
-    movl $ND_SENTINEL_SZ, %ebx
+    movl $ND_HEADER_SZ, %ebx
     int $LINUX_SYSCALL
     movl %eax, brk
 
-    # Insert the full 2G space into list
-    pushl $31
+    popl %ebx
+    leave
+    ret
+
+.type move_root, @function
+# Move up root to ensure `root_level` >= level required
+.equ MVR_ARG_LEVEL, 8
+move_root:
+    pushl %ebp
+    movl %esp, %ebp
+    pushl %ebx
+
+    # Move brk to be 2 * required
+    movl MVR_ARG_LEVEL(%ebp), %ecx
+    movl $8, %ebx
+    shll %cl, %ebx
+    cmpl %ebx, brk
+    jge mvr_already_enough
+    movl $SYS_BRK, %eax
+    int $LINUX_SYSCALL
+    movl %eax, brk
+mvr_already_enough:
+
+    # Create new blocks
+    movl root_level, %ecx
+    movl $4, %ebx
+    shll %cl, %ebx
+mvr_newblk_loop:
+    testl $-1, base
+    jz mvr_not_merge
+    cmpl %ecx, ND_LEVEL(base)
+    jne mvr_not_merge
+    # Merge
+    # Pick from original list
+    pushl %ecx
+    pushl base
+    call pick_node
+    addl $4, %esp
+    popl %ecx
+    # Add to new list (iterator increased)
+    incl %ecx
+    shll $1, %ebx
+    pushl %ecx
+    pushl base
+    call prepend_list
+    add $4, %esp
+    popl %ecx
+mvr_not_merge:
+    # Not merge
+    # Add to new list
+    movl base, %edx
+    addl %ebx, %edx
+    pushl %ecx
     pushl %edx
     call prepend_list
-    addl $8, %esp
+    addl $4, %esp
+    popl %ecx
+    # Increase iterator
+    incl %ecx
+    shll $1, %ebx
+mvr_create_next_loop:
+    cmpl %ecx, MVR_ARG_LEVEL(%ebp)
+    # %ecx <= arg, not <
+    jne mvr_init_loop
 
     popl %ebx
     leave
@@ -61,9 +124,16 @@ prepare_blk:
     movl %esp, %ebp
     pushl %ebx
 
+    # Find a block to split
     movl PRB_ARG_LEVEL(%ebp), %ebx
     movl %ebx, %ecx
 prep_find_avail_loop:
+    cmpl %ecx, root_level
+    jge prep_not_moving_root
+    pushl %ecx
+    call move_root
+    popl %ecx
+prep_not_moving_root:
     pushl %ecx
     call pop_list
     popl %ecx
@@ -73,6 +143,7 @@ prep_find_avail_loop:
     jmp prep_find_avail_loop
 end_prep_find_avail_loop:
 
+    # Split down
 prep_main_loop:
     cmpl %ecx, %ebx
     je end_prep_main_loop
@@ -108,7 +179,7 @@ allocate:
     pushl %ebx
 
     # Initialize in the first run
-    cmpl $0, brk
+    cmpl $0, base
     jne initialized
     call init
 initialized:
@@ -121,17 +192,6 @@ initialized:
     pushl %ebx
     call prepare_blk
     addl $4, %esp
-
-    addl %eax, %ebx
-    cmpl brk, %ebx
-    jg all_brk_already_alloced
-    movl %eax, %edx
-    movl $SYS_BRK, %eax
-    # %ebx already set
-    int $LINUX_SYSCALL
-    movl %eax, brk
-    movl %edx, %eax
-all_brk_already_alloced:
 
     addl $ND_HEADER_SZ, %eax
 
@@ -152,14 +212,20 @@ deallocate:
     movl $0, ND_PREV(%ebx)
 
 dealloc_loop:
-    # %eax = buddy = addr ^ (4 << level)
+    # %eax = buddy = ((addr - base) ^ (4 << level)) + base
     movl ND_LEVEL(%ebx), %ecx
     movl $4, %eax
     shll %cl, %eax
-    xorl %ebx, %eax 
-    # x->next != 0 means available
+    movl %ebx, %edx
+    subl base, %edx
+    xorl %edx, %eax
+    addl base, %eax
+    # x->next == 0 means not available
     cmp $0, ND_NEXT(%eax)
     je end_dealloc_loop
+    # x->level != level means not mergeable
+    cmp ND_LEVEL(%eax), %ecx
+    jne end_dealloc_loop
     # Delete buddy with higher address and set %ebx to be with lower address
     movl %eax, %edx
     orl %ebx, %edx

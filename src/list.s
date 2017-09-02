@@ -12,6 +12,7 @@
     .lcomm trailer, (32 - 4) * ND_SENTINEL_SZ
 
 .section .text
+.globl pick_node
 .type pick_node, @function
 # Pick a node from linked list
 .equ PCK_ARG_NODE, 8
@@ -83,6 +84,8 @@ pop_list_ret:
 .equ PPD_ARG_LEVEL, 12
 prepend_list:
     movl PPD_ARG_LEVEL - 4(%esp), %eax
+    movl PPD_ARG_NODE - 4(%esp), %ecx
+    movl %eax, ND_LEVEL(%ecx)
     leal available(, %eax, ND_SENTINEL_SZ), %eax
     movl %eax, PPD_ARG_LEVEL - 4(%esp)
     jmp insert_node
