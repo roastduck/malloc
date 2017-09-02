@@ -222,8 +222,7 @@ deallocate:
     pushl %ebx
 
     movl DAL_ARG_ADDR(%ebp), %ebx
-    movl $0, ND_NEXT(%ebx)
-    movl $0, ND_PREV(%ebx)
+    subl $ND_HEADER_SZ, %ebx
 
 dealloc_loop:
     # %eax = buddy = ((addr - base) ^ (16 << level)) + base
@@ -250,6 +249,11 @@ dealloc_loop:
     incl ND_LEVEL(%ebx)
     jmp dealloc_loop
 end_dealloc_loop:
+
+    pushl ND_LEVEL(%ebx)
+    pushl %ebx
+    call prepend_list
+    addl $8, %esp
 
     popl %ebx
     leave
