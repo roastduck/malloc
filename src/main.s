@@ -232,6 +232,8 @@ deallocate:
 dealloc_loop:
     # %eax = buddy = ((addr - base) ^ (16 << level)) + base
     movl ND_LEVEL(%ebx), %ecx
+    cmpl %ecx, root_level
+    je end_dealloc_loop
     movl $ND_MIN_SIZE, %eax
     shll %cl, %eax
     movl %ebx, %edx
@@ -244,13 +246,12 @@ dealloc_loop:
     # x->level != level means not mergeable
     cmp ND_LEVEL(%eax), %ecx
     jne end_dealloc_loop
-    # Delete buddy with higher address and set %ebx to be with lower address
-    movl %eax, %edx
-    orl %ebx, %edx
-    andl %eax, %ebx
-    pushl %edx
+    # Delete buddy
+    pushl %eax
     call pick_node
-    addl $4, %esp
+    popl %eax
+    # Set %ebx to be with lower address
+    andl %eax, %ebx
     incl ND_LEVEL(%ebx)
     jmp dealloc_loop
 end_dealloc_loop:
