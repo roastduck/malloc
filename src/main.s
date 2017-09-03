@@ -251,7 +251,11 @@ dealloc_loop:
     call pick_node
     popl %eax
     # Set %ebx to be with lower address
+    subl base, %eax
+    subl base, %ebx
     andl %eax, %ebx
+    addl base, %ebx
+    # Next loop
     incl ND_LEVEL(%ebx)
     jmp dealloc_loop
 end_dealloc_loop:
